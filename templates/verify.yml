@@ -1,0 +1,23 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # 工具链与本地 WSL 版本一致;版本号只有一处(moonbit/scripts/devkit.conf)。
+      - name: Install MoonBit
+        run: curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+        env:
+          MOONBIT_INSTALL_VERSION: {{MOONC_VERSION}}
+{{PROJECT_SETUP}}
+      # 门禁只有一份实现:CI 与本地钩子跑的是同一个脚本,它自带生成物完整性校验。
+      - name: Verify
+        run: bash scripts/devkit/verify.sh
