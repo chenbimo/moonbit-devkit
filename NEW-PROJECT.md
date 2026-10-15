@@ -80,11 +80,45 @@ bash /mnt/c/codes/moonbit/scripts/devkit.sh init <模块名>
 
 ### 一次性设置
 
+前置:先在 GitHub 安装 App「Cloudflare Workers and Pages」(`github.com/apps/cloudflare-workers-and-pages`),并把授权范围限制到目标仓库。
+没有这一步,推送事件到不了 Cloudflare,任何构建都不会触发。
+
+然后逐条执行:
+
 ```bash
-cf auth login
-cf pages create                          # 项目名填 moonbit-<name>
-cf pages domains create moonbit-<name>   # 域名填 <name>.moonbitlang.dev
+cf auth login                             # 本机一次即可
+
+# 1) 建 Pages 项目,工具链与构建配置一次给全
+cf pages create \
+  --name moonbit-<name> \
+  --production-branch main \
+  --build-config-root-dir docs \
+  --build-config-build-command 'bun install --frozen-lockfile && bun run build' \
+  --build-config-destination-dir dist
+
+# 2) 绑自定义域(证书自动签发,几分钟)
+cf pages domains create moonbit-<name> --name <name>.moonbitlang.dev
+
+# 3) CLI 建域不会自动建 DNS 记录,必须手动补一条代理 CNAME
+cf dns records create -z moonbitlang.dev \
+  --body '{"type":"CNAME","name":"<name>","content":"moonbit-<name>.pages.dev","proxied":true,"ttl":1}'
+
+# 4) 连 GitHub 仓库
+#    id 从 GitHub API 取:users/chenbimo 与 repos/chenbimo/<name> 返回里的 "id" 字段
+cf pages source connect moonbit-<name> \
+  --body '{"type":"github","config":{"owner":"chenbimo","owner_id":<owner-id>,"repo_name":"<name>","repo_id":<repo-id>,"production_branch":"main","deployments_enabled":true,"production_deployments_enabled":true,"pr_comments_enabled":true,"preview_deployment_setting":"all","path_includes":["docs/*","moon.mod"],"path_excludes":[]}}'
+
+# 5) 两个构建环境变量,production 与 preview 都要
+cf pages edit moonbit-<name> \
+  --body '{"deployment_configs":{"production":{"env_vars":{"BUN_VERSION":{"type":"plain_text","value":"<本地 bun 版本>"},"SKIP_DEPENDENCY_INSTALL":{"type":"plain_text","value":"1"}}},"preview":{"env_vars":{"BUN_VERSION":{"type":"plain_text","value":"<本地 bun 版本>"},"SKIP_DEPENDENCY_INSTALL":{"type":"plain_text","value":"1"}}}}}'
 ```
+
+### 为什么必钉 BUN_VERSION
+
+- CF 构建系统在**我们自己命令之前**有一个自动「依赖安装」阶段:它看仓库里的锁文件选包管理器(`bun.lock` → bun),然后用镜像自带的 bun 去装。
+- 镜像里的 bun 是 1.2.15(2026-10 实测),读不了 bun 1.4 写的 `lockfileVersion: 2`,构建会先挂在自动安装,我们的命令一次都不会执行。
+- 所以 `BUN_VERSION` 要与本地写锁文件的 bun 版本一致;官方支持「Any version」,把关键预装软件钉住也是官方 best practice 原话。
+- `SKIP_DEPENDENCY_INSTALL=1` 让安装只发生我们的命令里,不由 CF 的隐式阶段代劳。
 
 ### 持续部署:用 Pages 的 Git 集成
 
@@ -111,6 +145,24 @@ cf pages domains create moonbit-<name>   # 域名填 <name>.moonbitlang.dev
 - VitePress 精确锁版本,不写 `^`
 - 页面里不硬编码版本号,一律从 `moon.mod` 读
 
+### 构建出问题时
+
+```bash
+# 构建与部署是否成功
+cf pages deployments list --project-name moonbit-<name>
+
+# 失败时看构建日志
+cf pages deployments history logs get <deployment-id> --project-name moonbit-<name>
+
+# 改了 Cloudflare 配置后重新构建:从分支 HEAD 触发一次,不用推送
+cf pages deployments create moonbit-<name> --branch main
+```
+
+两个实测坑(2026-10)。
+
+- `cf pages deployments retry` 会用创建那次部署时的旧配置重跑,验证新配置必须用上面的 `deployments create`。
+- 环境变量的值必须是 `{"type":"plain_text","value":"..."}` 对象,裸字符串会被 400 拒绝。
+
 ## 六、项目侧只留什么
 
 - 业务源码、`moon.mod`、`README.md`
@@ -130,3 +182,6 @@ cf pages domains create moonbit-<name>   # 域名填 <name>.moonbitlang.dev
 - [ ] `bash scripts/devkit/verify.sh` 通过
 - [ ] 有文档站时:Pages 项目名 `moonbit-<name>`,自定义域 `<name>.moonbitlang.dev`
 - [ ] 有文档站时:`base` 为 `'/'`,监听路径含 `moon.mod`
+- [ ] 有文档站时:GitHub App「Cloudflare Workers and Pages」已装且只授权本仓库
+- [ ] 有文档站时:`BUN_VERSION` 与本地写锁文件的 bun 版本一致,`SKIP_DEPENDENCY_INSTALL=1`
+- [ ] 有文档站时:首次构建成功,自定义域返回 200
