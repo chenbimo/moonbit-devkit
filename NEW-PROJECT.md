@@ -123,7 +123,7 @@ cf pages edit moonbit-<name> \
 
 门户的例外都在这一页内。
 
-- 仓库与目录名直接用 `moonbitlang.dev`(与域同名,克隆后目录就对),不套 `<name>` 规则;Pages 项目名仍为 `moonbit-site`,提交前缀仍为 `site`。
+- 门户允许目录与仓库不同名：目录是 `site`（与 `<name>` 一致），仓库远端是唯一例外，取域名 `git@github.com:chenbimo/moonbitlang.dev.git`（一眼可辨）——克隆产物目录名为仓库名属预期。Pages 项目名仍为 `moonbit-site`，提交前缀仍为 `site`；audit 由 origin 识别门户身份，不依赖目录名。
 - 上面第 3 步的 DNS 记录 `name` 对门户填 apex `moonbitlang.dev`(CNAME 展平),不是子域名。
 - 门户的监听路径是全仓 `*`:站点即内容,任何一次 push 都应触发重部署。
 
@@ -206,7 +206,7 @@ cf pages deployments create moonbit-<name> --branch main
 bash /mnt/c/codes/moonbit/scripts/devkit.sh audit <项目>
 ```
 
-机检覆盖:devkit 接入与生成物一致(`check` 同源)、`core.hooksPath`、origin 形态(SSH,`chenbimo/<目录名>`)、分支 `main`、`moon.mod` 五字段与模块名/仓库指向、README 与 LICENSE、`scripts/devkit.conf` 的名称与模块对齐、文档站组(docs 存在则核 `base '/'`、`bun.lock` 已跟踪、`.gitignore` 三件、AGENTS 记录 Pages 项目、门户卡片);门户(`moonbitlang.dev`)免 docs 组并豁免 `<name>` 规则。
+机检覆盖：devkit 接入与生成物一致（`check` 同源）、`core.hooksPath`、origin 形态（SSH，模块为 `chenbimo/<目录名>`，门户为 `chenbimo/moonbitlang.dev` 并由此识别门户身份）、分支 `main`、`moon.mod` 五字段与模块名/仓库指向、README 与 LICENSE、`scripts/devkit.conf` 的名称与模块对齐、文档站组（docs 存在则核 `base '/'`、`bun.lock` 已跟踪、`.gitignore` 三件、AGENTS 记录 Pages 项目、门户卡片）；门户（目录 `site`）免 docs 组并豁免 `<name>` 规则。
 
 云端四项手工核对(发现缺失即按第五节的同款命令补):
 
@@ -239,6 +239,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://<名>.moonbitlang.dev/
 .env.*
 *.key
 *.pem
+.temp/
 ```
 
 audit 同时做两类扫描,命中即拦:
