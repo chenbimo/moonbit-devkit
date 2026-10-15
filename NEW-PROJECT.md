@@ -195,3 +195,74 @@ cf pages deployments create moonbit-<name> --branch main
 - [ ] 有文档站时:GitHub App「Cloudflare Workers and Pages」已装,且仓库在授权围内(本工作区为 All repositories)
 - [ ] 有文档站时:`BUN_VERSION` 与本地写锁文件的 bun 版本一致,`SKIP_DEPENDENCY_INSTALL=1`
 - [ ] 有文档站时:首次构建成功,自定义域返回 200
+
+## 八、就绪检查:`检查 <项目>`
+
+当你说「检查 xxx 项目」时,执行一次就绪审计,缺什么补什么。审计分两组:仓库侧(机检,离线可跑)与云端(手工命令核对)。全部通过即「就绪」。
+
+机检一条命令(在 WSL 内):
+
+```bash
+bash /mnt/c/codes/moonbit/scripts/devkit.sh audit <项目>
+```
+
+机检覆盖:devkit 接入与生成物一致(`check` 同源)、`core.hooksPath`、origin 形态(SSH,`chenbimo/<目录名>`)、分支 `main`、`moon.mod` 五字段与模块名/仓库指向、README 与 LICENSE、`scripts/devkit.conf` 的名称与模块对齐、文档站组(docs 存在则核 `base '/'`、`bun.lock` 已跟踪、`.gitignore` 三件、AGENTS 记录 Pages 项目、门户卡片);门户(`moonbitlang.dev`)免 docs 组并豁免 `<name>` 规则。
+
+云端四项手工核对(发现缺失即按第五节的同款命令补):
+
+```bash
+# 1) GitHub 仓库存在
+curl -s -o /dev/null -w '%{http_code}\n' https://api.github.com/repos/chenbimo/<名>
+
+# 2) Pages 项目与构建配置(核对 root=docs、输出 dist、构建命令、两个环境变量)
+cf pages get moonbit-<名>
+cf pages domains list --project-name moonbit-<名>
+
+# 3) DNS 子域名解析正确
+cf dns records list -z moonbitlang.dev | grep <名>
+
+# 4) 实站 200 且内容对
+curl -s -o /dev/null -w '%{http_code}\n' https://<名>.moonbitlang.dev/
+```
+
+补充原则:仓库侧缺失直接补;云端缺失按第五节一次性设置的同款命令补;补完重跑机检并实测域名 200。方向未定的项目,文档站与卡片属「待定缺失」—— 先定方向再补,不算事故。
+
+### 敏感与忽略
+
+每个仓库的 `.gitignore` 都要含标准拒收块(audit 机检它):
+
+```gitignore
+# 敏感与本地态:令牌、私钥与 CLI 本地状态禁止入库(见工作区规范第八节)
+.cloudflare/
+.wrangler/
+.env
+.env.*
+*.key
+*.pem
+```
+
+audit 同时做两类扫描,命中即拦:
+
+- **文件名**:跟踪列表出现 `.env*`、`*.pem`、`*.key`、`credentials`、`secrets.json` 之类
+- **内容**:HEAD 提交里出现私钥块(`BEGIN … PRIVATE KEY`)、令牌名(`CLOUDFLARE_API_TOKEN`/`CF_API_TOKEN`)或云厂商密钥签名(`sk-…`、`AKIA…`)
+
+两条理由支撑 `.cloudflare/` 与 `.wrangler/` 必须拒收:`cf` CLI 会自行往所在仓的 `.gitignore` 追加 `.cloudflare/`(其本地态可能含缓存令牌);密钥本体永远在用户目录(AppData 的 cloudflare 配置),不在任何仓库路径里。全历史深扫是额外重活,只在有嫌疑的仓库按需执行,不进常规审计。
+
+## 九、版本与发布
+
+三档语义,由提交的性质决定版本位,**大版本永远不自动产生**:
+
+| 版本位 | 触发 | 例 |
+| --- | --- | --- |
+| 小版本 patch | 小修小改:文案、样式、配置微调、注释、CI、不改对外行为的内部整理 | `0.6.0` → `0.6.1` |
+| 中版本 minor | bug 修复、新增功能 | `0.6.0` → `0.7.0` |
+| 大版本 major | 破坏性变更、重大重构、里程碑 | `0.6.0` → `1.0.0` |
+
+两条硬规矩:
+
+- **「发布大版本」是口令**:没有这句明确指令,任何会话、任何自动流程、任何工具都不得把版本号 bump 到大版本位 —— 包括重构、迁移、接口大改在内,一律先停在当前中/小版本位,由你决定。
+- 分批小步原则:能攒则攒,一批发布一次;未被要求时,主动 bump 版本号一律视为过度动作。
+
+发布动作:把版本变更写进 `moon.mod`(verify 会核对与 CLI 常量同步)→ 提交 → 打 tag `v<版本>` → 推送(tag 会触发完整门禁)。文档站右上角的版本号构建时读 `moon.mod`,发布即自动跟进,不需要改页面。
+
+tag 对齐由 `devkit.sh audit` 机检:版本号回退是 MISS;已 bump 未打 tag 属正常发布间隙,提示但不算缺失;版本与最新 tag 一致记为就绪。
