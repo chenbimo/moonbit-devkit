@@ -80,7 +80,8 @@ bash /mnt/c/codes/moonbit/scripts/devkit.sh init <模块名>
 
 ### 一次性设置
 
-前置:先在 GitHub 安装 App「Cloudflare Workers and Pages」(`github.com/apps/cloudflare-workers-and-pages`),并把授权范围限制到目标仓库。
+前置:先在 GitHub 安装 App「Cloudflare Workers and Pages」(`github.com/apps/cloudflare-workers-and-pages`)。
+授权围可以是「All repositories」(本工作区的选择:新建仓库即免逐个授权)或官方推荐的最小集合;关键是目标仓库必须落在围内。
 没有这一步,推送事件到不了 Cloudflare,任何构建都不会触发。
 
 然后逐条执行:
@@ -119,6 +120,12 @@ cf pages edit moonbit-<name> \
 - 镜像里的 bun 是 1.2.15(2026-10 实测),读不了 bun 1.4 写的 `lockfileVersion: 2`,构建会先挂在自动安装,我们的命令一次都不会执行。
 - 所以 `BUN_VERSION` 要与本地写锁文件的 bun 版本一致;官方支持「Any version」,把关键预装软件钉住也是官方 best practice 原话。
 - `SKIP_DEPENDENCY_INSTALL=1` 让安装只发生我们的命令里,不由 CF 的隐式阶段代劳。
+
+门户的例外都在这一页内。
+
+- 仓库与目录名直接用 `moonbitlang.dev`(与域同名,克隆后目录就对),不套 `<name>` 规则;Pages 项目名仍为 `moonbit-site`,提交前缀仍为 `site`。
+- 上面第 3 步的 DNS 记录 `name` 对门户填 apex `moonbitlang.dev`(CNAME 展平),不是子域名。
+- 门户的监听路径是全仓 `*`:站点即内容,任何一次 push 都应触发重部署。
 
 ### 持续部署:用 Pages 的 Git 集成
 
@@ -162,6 +169,9 @@ cf pages deployments create moonbit-<name> --branch main
 
 - `cf pages deployments retry` 会用创建那次部署时的旧配置重跑,验证新配置必须用上面的 `deployments create`。
 - 环境变量的值必须是 `{"type":"plain_text","value":"..."}` 对象,裸字符串会被 400 拒绝。
+- 监听路径会拦住生产部署:不命中的推送会留下一条全部阶段 `idle`、且 `is_skipped: true`、`skip_reason: path_config` 的部署记录,这是跳过,不是故障。
+- `cf pages source connect` 的 `owner_id` 与 `repo_id` 必须是字符串,裸数字同样 400(8000006)。
+- 在 Git Bash 里给 `--build-config-destination-dir` 传 `/` 会被 MSYS 路径转换成 `C:/Program Files/Git` 之类的主机路径,须在命令前加 `MSYS2_ARG_CONV_EXCL='*'`,或改用 `--body` 设置。
 
 ## 六、项目侧只留什么
 
@@ -182,6 +192,6 @@ cf pages deployments create moonbit-<name> --branch main
 - [ ] `bash scripts/devkit/verify.sh` 通过
 - [ ] 有文档站时:Pages 项目名 `moonbit-<name>`,自定义域 `<name>.moonbitlang.dev`
 - [ ] 有文档站时:`base` 为 `'/'`,监听路径含 `moon.mod`
-- [ ] 有文档站时:GitHub App「Cloudflare Workers and Pages」已装且只授权本仓库
+- [ ] 有文档站时:GitHub App「Cloudflare Workers and Pages」已装,且仓库在授权围内(本工作区为 All repositories)
 - [ ] 有文档站时:`BUN_VERSION` 与本地写锁文件的 bun 版本一致,`SKIP_DEPENDENCY_INSTALL=1`
 - [ ] 有文档站时:首次构建成功,自定义域返回 200
