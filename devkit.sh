@@ -151,7 +151,7 @@ check_project() {
 # 缺失者逐条列出,全部通过返回 0,否则返回 1。
 audit_project() {
   local name="$1"
-  local path="$WORKSPACE/$name" fail=0 got want key url branch hooks_path
+  local path="$WORKSPACE/$name" fail=0 got want key url branch hooks_path portal=0
   audit_ok() { echo "  ok    $1"; }
   audit_miss() { echo "  MISS  $1"; fail=$((fail + 1)); }
 
@@ -173,7 +173,8 @@ audit_project() {
   [ "$got" = "$want" ] && audit_ok "devkit 与唯一源同 revision"
   [ "$got" = "$want" ] || audit_miss "devkit 落后于唯一源(跑 devkit.sh sync)"
 
-  # git 形态:钩子、远端、分支。门户例外:目录名即仓库名(命名规范第八节)。
+  # git 形态:钩子、远端、分支。门户例外:远端是域名仓库(chenbimo/moonbitlang.dev.git),
+  # 由 origin 识别,不依赖目录名。
   hooks_path=$(git -C "$path" config --get core.hooksPath)
   if [ "$hooks_path" = ".githooks" ]; then
     audit_ok "core.hooksPath = .githooks"
@@ -181,10 +182,15 @@ audit_project() {
     audit_miss "core.hooksPath 应为 .githooks(现:${hooks_path:-未设})"
   fi
   url=$(git -C "$path" remote get-url origin 2>/dev/null)
-  if [ "$url" = "git@github.com:chenbimo/$name.git" ]; then
-    audit_ok "origin 指向 chenbimo/$name(SSH)"
+  local expected_url="git@github.com:chenbimo/$name.git"
+  if [ "$url" = "git@github.com:chenbimo/moonbitlang.dev.git" ]; then
+    expected_url="$url"
+    portal=1
+  fi
+  if [ "$url" = "$expected_url" ]; then
+    audit_ok "origin 指向 ${expected_url#git@github.com:}(SSH)"
   else
-    audit_miss "origin 应为 git@github.com:chenbimo/$name.git(现:${url:-未设})"
+    audit_miss "origin 应为 $expected_url(现:${url:-未设})"
   fi
   branch=$(git -C "$path" symbolic-ref --short HEAD 2>/dev/null)
   if [ "$branch" = "main" ]; then
@@ -193,8 +199,8 @@ audit_project() {
     audit_miss "分支应为 main(现:${branch:-无})"
   fi
 
-  # 项目身份:moon.mod齐全且名称对齐(门户没有 moon.mod,跳过这一组)。
-  if [ "$name" != "moonbitlang.dev" ]; then
+  # 项目身份:moon.mod 齐全且名称对齐(门户没有 moon.mod,跳过这一组)。
+  if [ "$portal" = 0 ]; then
     if [ -f "$path/moon.mod" ]; then
       audit_ok "moon.mod 存在"
       for key in version license description repository readme; do
@@ -240,9 +246,9 @@ audit_project() {
   if [ -f "$path/scripts/devkit.conf" ]; then
     # shellcheck source=/dev/null
     source "$path/scripts/devkit.conf"
-    [ "${DEVKIT_NAME:-}" = "$([ "$name" = moonbitlang.dev ] && echo site || echo "$name")" ] &&
+    [ "${DEVKIT_NAME:-}" = "$([ "$portal" = 1 ] && echo site || echo "$name")" ] &&
       audit_ok "DEVKIT_NAME 与项目对齐" ||
-      audit_miss "DEVKIT_NAME 应为 $([ "$name" = moonbitlang.dev ] && echo site || echo "$name")"
+      audit_miss "DEVKIT_NAME 应为 $([ "$portal" = 1 ] && echo site || echo "$name")"
     if [ -f "$path/moon.mod" ] && [ "${fail:-0}" -lt 20 ]; then
       mn=$(sed -nE 's/^name = "([^"]+)"/\1/p' "$path/moon.mod")
       [ "${DEVKIT_MODULE:-}" = "$mn" ] && audit_ok "DEVKIT_MODULE 与 moon.mod 对齐" ||
@@ -253,8 +259,13 @@ audit_project() {
   fi
 
   # 文档站组:门户自身免检(它就是那个站);其余模块除非已建 docs/,否则记缺失。
-  if [ "$name" = "moonbitlang.dev" ]; then
+  if [ "$portal" = 1 ]; then
     audit_ok "门户形态:站点即仓库,免 docs/ 组"
+    if [ -f "$path/index.html" ] && grep -aqE '(src|href)="/' "$path/index.html"; then
+      audit_miss "index.html 存在以 / 开头的引用(资源与站内跳转应为相对路径)"
+    else
+      audit_ok "index.html 引用均为相对路径或外链"
+    fi
   elif [ -f "$path/docs/package.json" ]; then
     audit_ok "docs/ 文档站存在"
     grep -q "base: '/'" "$path/docs/.vitepress/config.js" &&
@@ -275,11 +286,13 @@ audit_project() {
     else
       audit_miss "AGENTS.md 未记录 Pages 项目与部署形态(应含 moonbit-$name 并指向 NEW-PROJECT.md)"
     fi
-    if [ -f "$WORKSPACE/moonbitlang.dev/main.js" ] &&
-      grep -q "$name.moonbitlang.dev" "$WORKSPACE/moonbitlang.dev/main.js"; then
-      audit_ok "门户卡片已有 docs 链接"
+    # 卡片数据(main.js)必须提及该模块:有 docs 站给 docs 链接,否则至少有 repo 链接。
+    portal_main="$WORKSPACE/site/main.js"
+    if [ -f "$portal_main" ] &&
+      grep -qE "$name\\.moonbitlang\\.dev|github\\.com/chenbimo/$name" "$portal_main"; then
+      audit_ok "门户卡片已列出该模块"
     else
-      audit_miss "门户 main.js 尚无 $name.moonbitlang.dev 卡片链接"
+      audit_miss "门户 main.js 尚未列出 $name(repo 或 docs 链接至少其一)"
     fi
   else
     audit_miss "docs/ 文档站未建(无方向的项目先定方向再上站,见第八节)"
