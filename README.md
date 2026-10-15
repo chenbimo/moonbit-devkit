@@ -31,6 +31,7 @@ scripts/
 ├── templates/
 │   ├── verify.yml         # CI 模板(替换工具链版本 + 注入项目 setup)
 │   └── devkit.conf        # 项目清单种子(仅 init 时种一次)
+├── NEW-PROJECT.md         # 新增模块的完整清单与命名规范
 └── README.md
 ```
 
@@ -45,11 +46,9 @@ bash $D sync  [项目...] # 改了源之后,把副本重新生成(省略项目�
 bash $D check [项目...] # 校验副本与源一致、且没有项目落后
 ```
 
-## 加了新项目之后
+## 新增一个模块
 
-1. `bash devkit.sh init <项目>`
-2. 编辑该项目的 `scripts/devkit.conf`,补全业务事实
-3. 在该仓库执行一次 `git config core.hooksPath .githooks`
+从建仓到文档站上线的完整清单(含命名规范)见 [`NEW-PROJECT.md`](./NEW-PROJECT.md)。
 
 ## 改了共享逻辑之后
 
@@ -68,10 +67,6 @@ bash $D check [项目...] # 校验副本与源一致、且没有项目落后
 校验本身不需要源树,所以 CI 也能跑完整校验。唯一漏洞是同时手改文件与戳记,那等同于故意绕过,
 `git commit --no-verify` 本来也拦不住。
 
-## 提交格式
+## 提交格式与命名
 
-```text
-[项目名](类型) 提交内容
-```
-
-类型:`feat` / `fix` / `docs` / `refactor` / `test` / `chore`。项目名取自各项目的 `DEVKIT_NAME`。
+见 [`NEW-PROJECT.md`](./NEW-PROJECT.md)。
