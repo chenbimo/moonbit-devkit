@@ -23,12 +23,15 @@ usage() {
   exit 2
 }
 
-# 工作区里所有项目(git 仓库),排除唯一源自身。
+# 工作区里所有模块项目(git 仓库):排除唯一源自身与白名单非模块(DEVKIT_EXCLUDE)。
+# 显式点名不受名单限制:audit site 仍可单独跑。
 projects() {
-  local d
+  local d exclude
+  exclude=" $DEVKIT_EXCLUDE "
   for d in "$WORKSPACE"/*/; do
     [ -d "$d/.git" ] || continue
     [ "$(cd "$d" && pwd)" = "$SRC" ] && continue
+    case "$exclude" in *" $(basename "$d") "*) continue ;; esac
     basename "$d"
   done
 }
@@ -261,6 +264,13 @@ audit_project() {
   # 文档站组:门户自身免检(它就是那个站);其余模块除非已建 docs/,否则记缺失。
   if [ "$portal" = 1 ]; then
     audit_ok "门户形态:站点即仓库,免 docs/ 组"
+    # 门户卡片数据在 site/src/;逐模块验子域链接仍在(AGENTS 验收:五模块全列出)。
+    local p
+    for p in $(projects); do
+      grep -qrE "$p\\.moonbitlang\\.dev" "$WORKSPACE/site/src" &&
+        audit_ok "门户卡片已列出 $p" ||
+        audit_miss "门户 src/configs 未列出 $p 的子域链接"
+    done
     if [ -f "$path/index.html" ] && grep -aqE '(src|href)="/' "$path/index.html"; then
       audit_miss "index.html 存在以 / 开头的引用(资源与站内跳转应为相对路径)"
     else
@@ -287,9 +297,9 @@ audit_project() {
       audit_miss "AGENTS.md 未记录 Pages 项目与部署形态(应含 moonbit-$name 并指向 NEW-PROJECT.md)"
     fi
     # 卡片数据(main.js)必须提及该模块:有 docs 站给 docs 链接,否则至少有 repo 链接。
-    portal_main="$WORKSPACE/site/main.js"
-    if [ -f "$portal_main" ] &&
-      grep -qE "$name\\.moonbitlang\\.dev|github\\.com/chenbimo/$name" "$portal_main"; then
+    # 门户已 Vue 化:数据源在 site/src/(configs),不再有根 main.js。
+    if [ -d "$WORKSPACE/site/src" ] &&
+      grep -qrE "$name\\.moonbitlang\\.dev|github\\.com/chenbimo/$name" "$WORKSPACE/site/src"; then
       audit_ok "门户卡片已列出该模块"
     else
       audit_miss "门户 main.js 尚未列出 $name(repo 或 docs 链接至少其一)"
