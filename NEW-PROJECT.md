@@ -18,6 +18,7 @@
 - 仓库名 = 模块名,放在 `chenbimo` 下
 - 主分支一律 `main`
 - 远端一律 SSH,形如 `git@github.com:chenbimo/<模块名>.git`
+- **推送一律在 Windows 侧执行**:SSH 私钥只在 `C:\Users\bimos\.ssh`,WSL 里没有,从 WSL 直接 `git push` 只会拿到 `Permission denied (publickey)`。WSL 负责构建、测试与钩子门禁,推送这一步交给 Windows 的 git(钩子在 Windows 推送时会由 `.githooks` 自动转交 WSL 执行,门禁不因此缺席)
 
 ```bash
 git init -b main
