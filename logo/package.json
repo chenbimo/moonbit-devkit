@@ -1,9 +1,0 @@
-{
-  "name": "moonbit-logo",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "opentype.js": "^1.3.4",
-    "@resvg/resvg-js": "^2.6.2"
-  }
-}
