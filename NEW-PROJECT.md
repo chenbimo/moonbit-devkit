@@ -191,6 +191,7 @@ cf pages deployments create moonbit-<name> --branch main
 - [ ] `core.hooksPath` 设成 `.githooks`
 - [ ] 一次提交能过 `commit-msg` 与 `pre-commit`
 - [ ] `bash scripts/devkit/verify.sh` 通过
+- [ ] 有文档站时,logo 用统一生成器出:`bun moonbit/scripts/logo/logo.mjs --name <名称> --out <项目>/docs/public/logo.svg`;站点图标统一用 `site/public` 的那套素材
 - [ ] 有文档站时:Pages 项目名 `moonbit-<name>`,自定义域 `<name>.moonbitlang.dev`
 - [ ] 有文档站时:`base` 为 `'/'`,监听路径含 `moon.mod`
 - [ ] 有文档站时:GitHub App「Cloudflare Workers and Pages」已装,且仓库在授权围内(本工作区为 All repositories)
