@@ -106,4 +106,8 @@ jobs:
 
       - name: moon publish
         if: steps.check.outputs.skip != 'true'
-        run: moon publish
+        run: |
+          set -euo pipefail
+          # 同 Build:注册表索引不在缓存里,发布前也要先更新。
+          moon update
+          moon publish
