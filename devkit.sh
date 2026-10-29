@@ -14,6 +14,7 @@ set -euo pipefail
 SRC=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 WORKSPACE=$(cd "$SRC/.." && pwd)
 CI_PATH=".github/workflows/verify.yml"
+RELEASE_PATH=".github/workflows/release.yml"
 
 # shellcheck source=/dev/null
 source "$SRC/devkit.conf"
@@ -45,10 +46,23 @@ resolve_projects() {
   fi
 }
 
+# 读项目 scripts/devkit.conf 里的单个声明;取不到时返回空串。
+# 只裁首尾空白,值里的空格要留着(DEVKIT_BUILDS 是多段参数)。
+conf_value() {
+  sed -nE "s/^$1=\"?([^\"#]*)\"?/\1/p" "$2" 2>/dev/null |
+    head -1 | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
+}
+
 # 生成物清单(相对项目根),sync 与 manifest 共用。
+# release.yml 只在项目声明了发布类型时才存在:没有产物的模块不该多一个空转的流水线。
 generated_files() {
+  local project="$1" release
   (cd "$SRC/static" && find . -type f | sed 's#^\./##')
   printf '%s\n' "$CI_PATH"
+  release=$(conf_value DEVKIT_RELEASE "$project/scripts/devkit.conf")
+  case "$release" in
+    library | binary) printf '%s\n' "$RELEASE_PATH" ;;
+  esac
 }
 
 # 源树内容哈希:各项目戳记里记它,check 用来判断谁落后于源。
@@ -57,20 +71,32 @@ source_revision() {
     while IFS= read -r f; do sha256sum "$f"; done) | sha256sum | cut -d' ' -f1
 }
 
-# 模板渲染 CI:替换工具链版本,注入项目自己的 setup 片段(可选)。
-render_ci() {
-  local project="$1" out="$project/$CI_PATH" setup="" line
-  mkdir -p "$(dirname "$out")"
+# 渲染一个模板:替换工具链版本与项目声明,并注入项目自己的 setup 片段(可选)。
+# 模板里的占位符全部来自 devkit.conf,渲染时不留活口——生成物里出现 {{...}} 就是漏了。
+render_template() {
+  local project="$1" template="$2" out="$3" setup="" line
+  local conf="$project/scripts/devkit.conf"
+  local module project_name builds binaries
+  module=$(conf_value DEVKIT_MODULE "$conf")
+  [ -n "$module" ] || module=$(basename "$project")
+  project_name=${module##*/}
+  builds=$(conf_value DEVKIT_BUILDS "$conf")
+  binaries=$(conf_value DEVKIT_BINARIES "$conf")
   [ -f "$project/scripts/ci-setup.yml" ] && setup=$(cat "$project/scripts/ci-setup.yml")
+  mkdir -p "$(dirname "$out")"
   : > "$out"
   while IFS= read -r line || [ -n "$line" ]; do
     line=${line//\{\{MOONC_VERSION\}\}/$MOONC_VERSION}
+    line=${line//\{\{MODULE\}\}/$module}
+    line=${line//\{\{PROJECT\}\}/$project_name}
+    line=${line//\{\{BUILDS\}\}/$builds}
+    line=${line//\{\{BINARIES\}\}/$binaries}
     if [[ "$line" == *'{{PROJECT_SETUP}}'* ]]; then
       printf '%s\n' "$setup" >> "$out"
     else
       printf '%s\n' "$line" >> "$out"
     fi
-  done < "$SRC/templates/verify.yml"
+  done < "$SRC/templates/$template"
 }
 
 sync_project() {
@@ -88,15 +114,29 @@ sync_project() {
     [ -x "$SRC/static/$rel" ] && chmod +x "$project/$rel"
   done < <(cd "$SRC/static" && find . -type f | sed 's#^\./##')
 
-  # 2) 渲染 CI。
-  render_ci "$project"
+  # 2) 渲染 CI:日常门禁一份,发布流水线按项目声明选模板。
+  render_template "$project" "verify.yml" "$project/$CI_PATH"
+  local release
+  release=$(conf_value DEVKIT_RELEASE "$project/scripts/devkit.conf")
+  case "$release" in
+    library)
+      render_template "$project" "release-library.yml" "$project/$RELEASE_PATH"
+      ;;
+    binary)
+      render_template "$project" "release-binary.yml" "$project/$RELEASE_PATH"
+      ;;
+    *)
+      # 没声明发布类型:删掉历史遗留的 release.yml,免得它静默跑着旧逻辑。
+      rm -f "$project/$RELEASE_PATH"
+      ;;
+  esac
 
   # 3) 写戳记:.manifest 供 sha256sum -c,.manifest.rev 记源版本。
   mkdir -p "$project/scripts/devkit"
   : > "$project/scripts/devkit/.manifest"
   while IFS= read -r rel; do
     printf '%s  %s\n' "$(sha256sum "$project/$rel" | cut -d' ' -f1)" "$rel"
-  done < <(generated_files | sort) >> "$project/scripts/devkit/.manifest"
+  done < <(generated_files "$project" | sort) >> "$project/scripts/devkit/.manifest"
   printf 'revision=%s\ngenerated=%s\n' "$revision" "$(date -Iseconds)" \
     > "$project/scripts/devkit/.manifest.rev"
 

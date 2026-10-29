@@ -1,0 +1,103 @@
+name: release
+
+# 打 tag 即发布,两步串行:
+#   verify → moon publish
+#
+# 库没有编译产物:mooncakes 分发的是源码包,GitHub Release 不挂资产。
+# 所以这里没有 build 与 release job——留一个空转的 job 只会让人怀疑漏了什么。
+#
+# 生成物 · 由 moonbit/scripts 渲染(源:templates/release-library.yml),手改无效。
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # tag 与代码里的版本必须是同一个数:两者漂移时发出去的版本号是骗人的。
+      - name: Tag matches moon.mod
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          version=$(sed -nE 's/^version = "([^"]+)"/\1/p' moon.mod | head -1)
+          if [ "$tag" != "$version" ]; then
+            echo "tag $GITHUB_REF_NAME does not match moon.mod version $version" >&2
+            exit 1
+          fi
+          echo "releasing {{PROJECT}} $version"
+
+      - name: Install MoonBit
+        run: curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+        env:
+          MOONBIT_INSTALL_VERSION: {{MOONC_VERSION}}
+
+      - name: Cache moon registry
+        uses: actions/cache@v4
+        with:
+          path: .mooncakes
+          key: mooncakes-x64-${{ hashFiles('moon.mod') }}
+          restore-keys: mooncakes-x64-
+{{PROJECT_SETUP}}
+      - name: Verify
+        run: bash scripts/devkit/verify.sh
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # 仓库级 secret(Settings → Secrets and variables → Actions)。
+    # secret 按仓库隔离,每个模块各配一次;不声明 environment,免得为同一个 token
+    # 在每个仓库各建一个环境。
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MoonBit
+        run: curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+        env:
+          MOONBIT_INSTALL_VERSION: {{MOONC_VERSION}}
+
+      - name: Write mooncakes credentials
+        run: |
+          set -euo pipefail
+          if [ -z "${MOONCAKES_CREDENTIALS:-}" ]; then
+            echo "secret MOONCAKES_CREDENTIALS is missing" >&2
+            exit 1
+          fi
+          mkdir -p "$HOME/.moon"
+          printf '%s' "$MOONCAKES_CREDENTIALS" > "$HOME/.moon/credentials.json"
+          # 粘贴时多一个换行或少了字段，moon publish 只会给一句看不懂的报错，
+          # 这里先确认它就是那份 {token, username}。
+          if ! grep -q '"token"' "$HOME/.moon/credentials.json" ||
+             ! grep -q '"username"' "$HOME/.moon/credentials.json"; then
+            echo "credentials.json must contain both token and username" >&2
+            exit 1
+          fi
+        env:
+          MOONCAKES_CREDENTIALS: ${{ secrets.MOONCAKES_CREDENTIALS }}
+
+      # 同一版本可能因为重跑而重复发布,先查 registry,已是这个版本就跳过。
+      # 取第一个 version 字段:响应里依赖项也带 version,贪婪匹配会抓错那个。
+      - name: Skip when already published
+        id: check
+        run: |
+          set -euo pipefail
+          version=$(sed -nE 's/^version = "([^"]+)"/\1/p' moon.mod | head -1)
+          published=$(curl -fsS "https://mooncakes.io/api/v0/modules/{{MODULE}}" \
+            | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)
+          echo "on mooncakes: $published, releasing: $version"
+          if [ "$published" = "$version" ]; then
+            echo "{{MODULE}} $version is already on mooncakes; skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: moon publish
+        if: steps.check.outputs.skip != 'true'
+        run: moon publish
