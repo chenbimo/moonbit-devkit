@@ -275,5 +275,6 @@ tag 对齐由 `devkit.sh audit` 机检:版本号回退是 MISS;已 bump 未打 t
 硬规则:**`push`(含 tag 推送)与 CI 只触发 format / lint / test**(外加秒级增量构建)。
 
 - 三件套的实现就是同一条 `scripts/devkit/verify.sh`,本地与 CI 一处:format = `moon fmt`;lint = `moon check --deny-warn`(严格类型与警告即本工作区的 lint,不另设工具);test = `moon test`。
+- CI 触发范围:`push` 到 `main`、推 `v*` 发布 tag、以及 PR。发布 tag 与普通推送走同一条门禁,不存在「tag 可以跳过」的缝。`.mooncakes` 按 `moon.mod` 缓存,改依赖才重新拉取。
 - **e2e、soak、任何分钟级套件绝不进入 push 与 CI**。它们的唯一入口是手动命令:`verify.sh --with-e2e`(仅 e2e)与 `--release`(e2e + soak),插槽(`DEVKIT_E2E` / `DEVKIT_SOAK`)没声明就没有这一档;任何自动流程与 AI 都不主动执行。
 - 连续性条款:构建目前是秒级增量,跟随快门禁;若某模块的构建耗时也涨到分钟级,就把它的构建挪进手动档,而不是把 push 慢下来。
